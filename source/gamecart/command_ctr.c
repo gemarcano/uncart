@@ -20,6 +20,7 @@ void CTR_CmdReadData(u32 sector, u32 length, u32 blocks, void* buffer)
     if(read_count++ > 10000)
     {
         CTR_CmdC5();
+        read_count = 0;
     }
 
     const u32 read_cmd[4] = {
