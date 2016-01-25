@@ -8,6 +8,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 
+#include "draw.h"
 #include "common.h"
 #include "aes.h"
 #include "protocol_ctr.h"
@@ -111,29 +112,59 @@ void Cart_Init(void)
     }
 }
 
+static void AES_SetKeyControl(u32 a) {
+    REG_AESKEYCNT = (REG_AESKEYCNT & 0xC0) | a | 0x80;
+}
+
 //returns 1 if MAC valid otherwise 0
 static u8 card_aes(u32 *out, u32 *buff, size_t size) { // note size param ignored
     u8 tmp = REG_AESKEYCNT;
+    REG_AESCNT = 0x10C00;    //flush r/w fifo macsize = 001
+
+    (*(vu8*)0x10000008) |= 0x0C; //???
+
     REG_AESCNT |= 0x2800000;
-    REG_AESCTR[0] = buff[14];
-    REG_AESCTR[1] = buff[13];
-    REG_AESCTR[2] = buff[12];
-    REG_AESCNT |= 0x2800000;
-    REG_AESKEYCNT = (REG_AESKEYCNT & 0xC0) | 0x3B;
-    REG_AESKEYYFIFO = buff[0];
-    REG_AESKEYYFIFO = buff[1];
-    REG_AESKEYYFIFO = buff[2];
-    REG_AESKEYYFIFO = buff[3];
-    REG_AESKEYCNT = tmp;
-    REG_AESKEYSEL = 0x3B;
-    REG_AESCNT |= 0x4000000;
+
+    //const u8 is_dev_unit = *(vu8*)0x10010010;
+    //if(is_dev_unit) //Dev unit
+    const u8 is_dev_cart = (A0_Response&3)==3;
+    if(is_dev_cart) //Dev unit
+    {
+        AES_SetKeyControl(0x11);
+        REG_AESKEYFIFO = 0;
+        REG_AESKEYFIFO = 0;
+        REG_AESKEYFIFO = 0;
+        REG_AESKEYFIFO = 0;
+        REG_AESKEYSEL = 0x11;
+    }
+    else
+    {
+        AES_SetKeyControl(0x3B);
+        REG_AESKEYYFIFO = buff[0];
+        REG_AESKEYYFIFO = buff[1];
+        REG_AESKEYYFIFO = buff[2];
+        REG_AESKEYYFIFO = buff[3];
+        REG_AESKEYSEL = 0x3B;
+    }
+
+    REG_AESCNT = 0x4000000;
+    REG_AESCNT &= 0xFFF7FFFF;
     REG_AESCNT |= 0x2970000;
     REG_AESMAC[0] = buff[11];
     REG_AESMAC[1] = buff[10];
     REG_AESMAC[2] = buff[9];
     REG_AESMAC[3] = buff[8];
+    REG_AESCNT |= 0x2800000;
+    REG_AESCTR[0] = buff[14];
+    REG_AESCTR[1] = buff[13];
+    REG_AESCTR[2] = buff[12];
     REG_AESBLKCNT = 0x10000;
-    REG_AESCNT = 0x83D70C00;
+
+    u32 v11 = ((REG_AESCNT | 0x80000000) & 0xC7FFFFFF); //Start and clear mode (ccm decrypt)
+    u32 v12 = v11 & 0xBFFFFFFF; //Disable Interrupt
+    REG_AESCNT = ((((v12 | 0x3000) & 0xFD7F3FFF) | (5 << 23)) & 0xFEBFFFFF) | (5 << 22);
+
+    //REG_AESCNT = 0x83D73C00;
     REG_AESWRFIFO = buff[4];
     REG_AESWRFIFO = buff[5];
     REG_AESWRFIFO = buff[6];
@@ -146,14 +177,8 @@ static u8 card_aes(u32 *out, u32 *buff, size_t size) { // note size param ignore
     return ((REG_AESCNT >> 21) & 1);
 }
 
-static void AES_SetKeyControl(u32 a) {
-    *((volatile u8*)0x10009011) = a | 0x80;
-}
-
 void Cart_Secure_Init(u32 *buf, u32 *out)
 {
-    AES_SetKeyControl(0x3B);
-
     u8 mac_valid = card_aes(out, buf, 0x200);
 
 //    if (!mac_valid)
@@ -175,17 +200,20 @@ void Cart_Secure_Init(u32 *buf, u32 *out)
 
     u32 test = 0;
     const u32 A2_cmd[4] = { 0xA2000000, 0x00000000, rand1, rand2 };
-    CTR_SendCommand(A2_cmd, 4, 1, 0x100822C, &test);
+    CTR_SendCommand(A2_cmd, 4, 1, 0x701002C, &test);
 
     u32 test2 = 0;
     const u32 A3_cmd[4] = { 0xA3000000, 0x00000000, rand1, rand2 };
-    CTR_SendCommand(A3_cmd, 4, 1, 0x100822C, &test2);
-
-    const u32 C5_cmd[4] = { 0xC5000000, 0x00000000, rand1, rand2 };
-    CTR_SendCommand(C5_cmd, 0, 1, 0x100822C, NULL);
+    CTR_SendCommand(A3_cmd, 4, 1, 0x701002C, &test2);
+    
+    if(test==CartID && test2==A0_Response)
+    {
+        const u32 C5_cmd[4] = { 0xC5000000, 0x00000000, rand1, rand2 };
+        CTR_SendCommand(C5_cmd, 0, 1, 0x100002C, NULL);
+    }
 
     for (int i = 0; i < 5; ++i) {
-        CTR_SendCommand(A2_cmd, 4, 1, 0x100822C, &test);
+        CTR_SendCommand(A2_cmd, 4, 1, 0x701002C, &test);
         ioDelay(0xF0000);
     }
 }
@@ -194,5 +222,5 @@ void Cart_Dummy(void) {
     // Sends a dummy command to skip encrypted responses some problematic carts send.
     u32 test;
     const u32 A2_cmd[4] = { 0xA2000000, 0x00000000, rand1, rand2 };
-    CTR_SendCommand(A2_cmd, 4, 1, 0x100822C, &test);
+    CTR_SendCommand(A2_cmd, 4, 1, 0x701002C, &test);
 }
