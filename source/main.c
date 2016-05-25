@@ -1,10 +1,10 @@
 #include "draw.h"
 #include "hid.h"
-#include "fatfs/ff.h"
 #include "gamecart/protocol.h"
 #include "gamecart/command_ctr.h"
 #include "headers.h"
-#include "i2c.h"
+#include <ctr9/io.h>
+#include <ctr9/i2c.h>
 
 #include <string.h>
 #include <stdio.h>
@@ -50,8 +50,6 @@ static int dump_cart_region(u32 start_sector, u32 end_sector, FIL* output_file, 
 
         u8* read_ptr = ctx->buffer;
         while (read_ptr < ctx->buffer + ctx->buffer_size && current_sector < end_sector) {
-            Cart_Dummy();
-            Cart_Dummy();
             
 	    //If there is less data to read than the curren read_size, fix it
 	    if (end_sector - current_sector < read_size)
@@ -82,6 +80,11 @@ static int dump_cart_region(u32 start_sector, u32 end_sector, FIL* output_file, 
 }
 
 int main() {
+
+ctr_sd_interface sd_io = {0};
+ctr_sd_interface_initialize(&sd_io);
+
+ctr_fatfs_default_setup(NULL, NULL, &sd_io);
 
 restart_program:
     // Setup boring stuff - clear the screen, initialize SD output, etc...
@@ -125,7 +128,6 @@ restart_program:
 
     // Guess 0x200 first for the media size. this will be set correctly once the cart header is read 
     // Read out the header 0x0000-0x1000
-    Cart_Dummy();
     Debug("Reading NCSD header...");
     CTR_CmdReadData(0, 0x200, 0x1000 / 0x200, target);
     Debug("Done reading NCSD header.");
@@ -163,20 +165,22 @@ restart_program:
         // Create output file
         char filename_buf[32];
         char extension_digit = cartSize <= file_max_blocks ? 's' : '0' + current_part;
-        snprintf(filename_buf, sizeof(filename_buf), "/%.16s.3d%c", ncchHeader->product_code, extension_digit);
+        snprintf(filename_buf, sizeof(filename_buf), "SD:/%.16s.3d%c", ncchHeader->product_code, extension_digit);
         Debug("Writing to file: \"%s\"", filename_buf);
         Debug("Change the SD card now and/or press a key.");
         Debug("(Or SELECT to cancel)");
         if (InputWait() & BUTTON_SELECT)
             break;
 
-        if (f_mount(&fs, "0:", 0) != FR_OK) {
+        if (f_mount(&fs, "SD:", 1) != FR_OK) {
             Debug("Failed to f_mount... Retrying");
             wait_key();
             goto cleanup_none;
         }
 
-        if (f_open(&file, filename_buf, FA_READ | FA_WRITE | FA_CREATE_ALWAYS) != FR_OK) {
+		int res = 0;
+        if ((res = f_open(&file, filename_buf, FA_READ | FA_WRITE | FA_CREATE_ALWAYS)) != FR_OK) {
+			Debug("Res: %i", res);
             Debug("Failed to create file... Retrying");
             wait_key();
             goto cleanup_mount;
@@ -209,7 +213,7 @@ cleanup_file:
         f_sync(&file);
         f_close(&file);
 cleanup_mount:
-        f_mount(NULL, "0:", 0);
+        f_mount(NULL, "SD:", 1);
 cleanup_none:
         ;
     }

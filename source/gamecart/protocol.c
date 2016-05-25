@@ -218,9 +218,3 @@ void Cart_Secure_Init(u32 *buf, u32 *out)
     }
 }
 
-void Cart_Dummy(void) {
-    // Sends a dummy command to skip encrypted responses some problematic carts send.
-    u32 test;
-    const u32 A2_cmd[4] = { 0xA2000000, 0x00000000, rand1, rand2 };
-    CTR_SendCommand(A2_cmd, 4, 1, 0x701002C, &test);
-}
