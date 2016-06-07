@@ -36,7 +36,10 @@ CFLAGS	:=	-g -Wall -Wextra -Wpedantic -O2 -flto\
 			-ffast-math -std=c11\
 			$(ARCH)
 
-CFLAGS	+=	$(INCLUDE) -DARM9 -Werror-implicit-function-declaration -Wcast-align -Wcast-qual -Wdisabled-optimization -Wformat=2 -Winit-self -Wlogical-op -Wmissing-declarations -Wmissing-include-dirs -Wredundant-decls -Wshadow -Wsign-conversion -Wstrict-overflow=5 -Wswitch-default -Wundef -Wno-unused
+CFLAGS	+=	$(INCLUDE) -DARM9 -Werror-implicit-function-declaration -Wcast-align\
+	-Wcast-qual -Wdisabled-optimization -Wformat=2 -Winit-self -Wlogical-op \
+	-Wmissing-declarations -Wmissing-include-dirs -Wredundant-decls -Wshadow \
+	-Wsign-conversion -Wstrict-overflow=5 -Wswitch-default -Wundef -Wno-unused
 
 CXXFLAGS	:= $(CFLAGS) -fno-rtti -fno-exceptions
 

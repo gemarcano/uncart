@@ -9,6 +9,8 @@
 
 #include <string.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include <malloc.h> //For memalign
 
 extern s32 CartID;
 extern s32 CartID2;
@@ -54,9 +56,9 @@ static int dump_cart_region(u32 start_sector, u32 end_sector, FIL* output_file, 
         while (read_ptr < ctx->buffer + ctx->buffer_size && current_sector < end_sector) {
             Cart_Dummy();
             Cart_Dummy();
-            
-	    //If there is less data to read than the curren read_size, fix it
-	    if (end_sector - current_sector < read_size)
+
+        //If there is less data to read than the current read_size, fix it
+        if (end_sector - current_sector < read_size)
             {
                 read_size = end_sector - current_sector;
             }
@@ -84,27 +86,25 @@ static int dump_cart_region(u32 start_sector, u32 end_sector, FIL* output_file, 
 }
 
 int main() {
+    // Arbitrary target buffer
+    // aligning to 32 bits in case other parts of the software assume alignment
+    const u32 target_buf_size = 16u * 1024u * 1024u; // 16MB
+    u32 * const target = memalign(32, target_buf_size);
+
+    u32 * const ncchHeaderData = memalign(32, sizeof(NCCH_HEADER));
+    NCCH_HEADER * const ncchHeader = (NCCH_HEADER*)ncchHeaderData;
+
+    NCSD_HEADER * const ncsdHeader = (NCSD_HEADER*)target;
 
 restart_program:
     // Setup boring stuff - clear the screen, initialize SD output, etc...
     ClearTop();
-    
+
     Debug("Uncart: ROM dump tool v0.2");
     Debug("Insert your game cart now.");
     wait_key();
 
-    // Arbitrary target buffer
-    // TODO: This should be done in a nicer way ;)
-    u32* target = (u32*)0x22000000;
-    NCSD_HEADER *ncsdHeader = (NCSD_HEADER*)target;
-    u32 target_buf_size = 16u * 1024u * 1024u; // 16MB
     memset(target, 0, target_buf_size); // Clear our buffer
-    
-    u32* ncchHeaderData = (u32*)0x23000000;
-    NCCH_HEADER *ncchHeader = (NCCH_HEADER*)ncchHeaderData;
-
-    *(vu32*)0x10000020 = 0; // InitFS stuff
-    *(vu32*)0x10000020 = 0x340; // InitFS stuff
 
     // ROM DUMPING CODE STARTS HERE
 
@@ -114,6 +114,7 @@ restart_program:
     CTR_CmdReadHeader(ncchHeader);
     Debug("Done reading NCCH header.");
 
+    // Check that the NCCH header magic is there
     if (strncmp((const char*)(ncchHeader->magic), "NCCH", 4))
     {
         Debug("NCCH magic not found in header!!!");
@@ -125,13 +126,14 @@ restart_program:
     u32 sec_keys[4];
     Cart_Secure_Init(ncchHeaderData, sec_keys);
 
-    // Guess 0x200 first for the media size. this will be set correctly once the cart header is read 
+    // Guess 0x200 first for the media size. this will be set correctly once the cart header is read
     // Read out the header 0x0000-0x1000
     Cart_Dummy();
     Debug("Reading NCSD header...");
     CTR_CmdReadData(0, 0x200, 0x1000 / 0x200, target);
     Debug("Done reading NCSD header.");
-    
+
+    // Check for NCSD magic
     if (strncmp((const char*)(ncsdHeader->magic), "NCSD", 4)) {
         Debug("NCSD magic not found in header!!!");
         Debug("Press A to continue anyway.");
@@ -139,16 +141,47 @@ restart_program:
             goto restart_prompt;
     }
 
+    Debug("Uncart can either dump the entire ROM (including");
+    Debug("empty space), or a trimmed version based on the");
+    Debug("size of the cart partitions.");
+    Debug("");
+
+    u32 input;
+    do
+    {
+        Debug("Press A to dump all of ROM, B for only the");
+        Debug("trimmed version.");
+        input = InputWait();
+    }
+    while (!(input & BUTTON_A) && !(input & BUTTON_B));
+
+
     const u32 mediaUnit = 0x200 * (1u << ncsdHeader->partition_flags[MEDIA_UNIT_SIZE]); //Correctly set the media unit size
 
     //Calculate the actual size by counting the adding the size of each partition, plus the initial offset
     //size is in media units
-    u32 cartSize = ncsdHeader->offsetsize_table[0].offset;
-    for(int i = 0; i < 8; i++){
-        cartSize += ncsdHeader->offsetsize_table[i].size;
-    }
+    u32 cartSize;
+    // Maximum number of blocks in a single file
+    u32 file_max_blocks;
 
-    Debug("Cart data size: %llu MB", (u64)cartSize * (u64)mediaUnit / 1024ull / 1024ull);
+    if (input & BUTTON_B)
+    {
+        cartSize = ncsdHeader->offsetsize_table[0].offset;
+        for(int i = 0; i < 8; i++){
+            cartSize += ncsdHeader->offsetsize_table[i].size;
+        }
+
+        Debug("Cart data size: %llu MB", (u64)cartSize * (u64)mediaUnit / 1024ull / 1024ull);
+        // Maximum number of blocks in a single file
+        file_max_blocks = 0xFFFFFFFFu / mediaUnit; // 4GiB - 513
+
+    }
+    else
+    {
+        cartSize = ncsdHeader->media_size;
+        // Maximum number of blocks in a single file
+        file_max_blocks = 0x80000000u / mediaUnit; // 2GiB
+    }
 
     struct Context context = {
         .buffer = (u8*)target,
@@ -157,8 +190,6 @@ restart_program:
         .media_unit = mediaUnit,
     };
 
-    // Maximum number of blocks in a single file
-    u32 file_max_blocks = 0xFFFFFFFFu / mediaUnit; // 4GiB - 1
     u32 current_part = 0;
 
     while (current_part * file_max_blocks < cartSize) {
@@ -220,6 +251,9 @@ restart_prompt:
     Debug("Press B to exit, any other key to restart.");
     if (!(InputWait() & BUTTON_B))
         goto restart_program;
+
+    free(ncchHeaderData);
+    free(target);
 
     Reboot();
     return 0;

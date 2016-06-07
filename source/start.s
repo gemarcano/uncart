@@ -86,23 +86,19 @@ _enable_caches:
 
     pop {r4-r5, pc}
 
+_fix_sdmc_mount:
+    @ Fix mounting of SDMC
+    ldr r0, =0x10000020
+    mov r1, #0x340
+    str r1, [r0]
+    mov pc, lr
+
 _init:
     push {r0-r12, lr}
 
     bl _enable_caches
-    
-    @@ Initialize .bss
- @   ldr   r0, =__bss_start__
- @   ldr   r1, =__bss_end__
- @   ldr   r2, =__bss_end__
- @   sbc   r2, r0
- @   eor   r4, r4
-     
 
-@zero_bss:
-@    strb  r4, [r0], #1
-@    subs  r2, r2, #1
-@    bne   zero_bss
+    bl _fix_sdmc_mount
 
     bl main
 
