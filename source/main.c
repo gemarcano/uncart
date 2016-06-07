@@ -4,6 +4,7 @@
 
 #include "draw.h"
 #include "hid.h"
+#include "i2c.h"
 #include "fatfs/ff.h"
 #include "gamecart/protocol.h"
 #include "gamecart/command_ctr.h"
@@ -24,6 +25,12 @@ static void ClearTop(void) {
 static void wait_key(void) {
     Debug("Press key to continue...");
     InputWait();
+}
+
+void Reboot()
+{
+    i2cWriteRegister(I2C_DEV_MCU, 0x20, 1 << 2);
+    while(true);
 }
 
 struct Context {
@@ -187,5 +194,6 @@ restart_prompt:
     if (!(InputWait() & BUTTON_B))
         goto restart_program;
 
+    Reboot();
     return 0;
 }
