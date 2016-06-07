@@ -31,17 +31,18 @@ INCLUDES	:=	source
 #---------------------------------------------------------------------------------
 ARCH	:=	-march=armv5te -mtune=arm946e-s -mthumb -mthumb-interwork
 
-CFLAGS	:=	-g -Wall -O2\
+CFLAGS	:=	-g -Wall -Wextra -Wpedantic -O2 -flto\
 			-fomit-frame-pointer\
-			-ffast-math -std=c99\
+			-ffast-math -std=c11\
 			$(ARCH)
 
-CFLAGS	+=	$(INCLUDE) -DARM9 -Werror-implicit-function-declaration
+CFLAGS	+=	$(INCLUDE) -DARM9 -Werror-implicit-function-declaration -Wcast-align -Wcast-qual -Wdisabled-optimization -Wformat=2 -Winit-self -Wlogical-op -Wmissing-declarations -Wmissing-include-dirs -Wredundant-decls -Wshadow -Wsign-conversion -Wstrict-overflow=5 -Wswitch-default -Wundef -Wno-unused
 
 CXXFLAGS	:= $(CFLAGS) -fno-rtti -fno-exceptions
 
 ASFLAGS	:=	-g $(ARCH)
 LDFLAGS	=	-nostartfiles -g --specs=../stub.specs $(ARCH) -Wl,-Map,$(TARGET).map
+OCFLAGS=--set-section-flags .bss=alloc,load,contents
 
 LIBS	:=
 
@@ -101,7 +102,7 @@ all: $(BUILD)
 $(BUILD):
 	@[ -d $@ ] || mkdir -p $@
 	@make --no-print-directory -C $(BUILD) -f $(CURDIR)/Makefile
-	cp $(OUTPUT).bin arm9payload.bin
+	cp $(OUTPUT).bin arm9loaderhax.bin
 
 #---------------------------------------------------------------------------------
 clean:
@@ -123,7 +124,7 @@ $(OUTPUT).elf	:	$(OFILES)
 
 #---------------------------------------------------------------------------------
 %.bin: %.elf
-	@$(OBJCOPY) -O binary $< $@
+	@$(OBJCOPY) $(OCFLAGS) -O binary $< $@
 	@echo built ... $(notdir $@)
 
 
