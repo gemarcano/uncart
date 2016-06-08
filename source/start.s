@@ -3,6 +3,7 @@
 .extern main
 .align 4
 .arm
+.extern fake_heap_end @ used for heap setup by newlib used by devKitARM
 
 #define SIZE_32KB  0b01110
 #define SIZE_128KB 0b10000
@@ -93,12 +94,22 @@ _fix_sdmc_mount:
     str r1, [r0]
     mov pc, lr
 
+_setup_heap:
+    mov r0, #0x2000000 @ Setup a 32MiB heap
+    ldr r1, =__end__ @ grab the location of the end of the binary
+    add r0, r0, r1
+    ldr r1, =fake_heap_end @ heap goes from end of program to this variable
+	str r0, [r1]
+	mov pc, lr
+
 _init:
     push {r0-r12, lr}
 
     bl _enable_caches
 
     bl _fix_sdmc_mount
+
+    bl _setup_heap
 
     bl main
 
