@@ -10,7 +10,29 @@
 #include "font.h"
 #include "draw.h"
 
+u8 *TOP_SCREEN0;
+u8 *TOP_SCREEN1;
+u8 *BOT_SCREEN0;
+u8 *BOT_SCREEN1;
+
 size_t current_y = 0;
+
+void DrawInit(void)
+{
+#ifdef BRAHMA
+    TOP_SCREEN0 = (u8*)(0x20000000);
+    TOP_SCREEN1 = (u8*)(0x20046500);
+    BOT_SCREEN0 = (u8*)(0x2008CA00);
+    BOT_SCREEN1 = (u8*)(0x200C4E00);
+#elif A9LH
+    TOP_SCREEN0 = (u8*)(*(u32*)0x23FFFE00);
+    TOP_SCREEN1 = (u8*)(*(u32*)0x23FFFE00);
+    BOT_SCREEN0 = (u8*)(*(u32*)0x23FFFE08);
+    BOT_SCREEN1 = (u8*)(*(u32*)0x23FFFE08);
+#else
+	#error "BRAHMA or A9LH must be defined!"
+#endif
+}
 
 void ClearScreen(unsigned char *screen, int color)
 {
@@ -28,8 +50,8 @@ void DrawCharacter(unsigned char *screen, int character, size_t x, size_t y, int
     for (size_t yy = 0; yy < 8; yy++) {
         size_t xDisplacement = (x * BYTES_PER_PIXEL * SCREEN_WIDTH);
         size_t yDisplacement = ((SCREEN_WIDTH - (y + yy) - 1) * BYTES_PER_PIXEL);
-        
-	unsigned char *screenPos = screen + xDisplacement + yDisplacement;
+
+        unsigned char *screenPos = screen + xDisplacement + yDisplacement;
         unsigned char charPos = font[(size_t)character * 8 + yy];
         for (int xx = 7; xx >= 0; xx--) {
             if ((charPos >> xx) & 1) {

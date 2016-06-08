@@ -46,7 +46,7 @@ CXXFLAGS	:= $(CFLAGS) -fno-rtti -fno-exceptions
 
 ASFLAGS	:=	-g $(ARCH)
 LDFLAGS	=	-nostartfiles -g --specs=../stub.specs $(ARCH) -Wl,-Map,$(TARGET).map
-OCFLAGS=	--set-section-flags .bss=alloc,load,contents
+OCFLAGS	=	--set-section-flags .bss=alloc,load,contents
 
 LIBS	:=
 
@@ -114,11 +114,11 @@ common:
 
 a9lh: common
 	@make --no-print-directory -C $(BUILD) -f $(CURDIR)/Makefile EXEC_METHOD=A9LH
-	cp $(OUTPUT).bin arm9loaderhax.bin
+	@mv $(OUTPUT).bin uncart_arm9loaderhax.bin
 
 brahma: common
 	@make --no-print-directory -C $(BUILD) -f $(CURDIR)/Makefile EXEC_METHOD=BRAHMA
-	cp $(OUTPUT).bin uncart_brahma.bin
+	@mv $(OUTPUT).bin uncart_brahma.bin
 
 release:
 	@rm -fr $(BUILD) $(OUTPUT).bin $(OUTPUT).elf
@@ -129,7 +129,8 @@ release:
 #---------------------------------------------------------------------------------
 clean:
 	@echo clean ...
-	@rm -fr $(BUILD) $(OUTPUT).elf $(OUTPUT).bin arm9payload.bin uncart_brahma.bin
+	@rm -fr $(BUILD) $(OUTPUT).elf $(OUTPUT).bin uncart_arm9loaderhax.bin \
+		uncart_brahma.bin
 
 
 #---------------------------------------------------------------------------------

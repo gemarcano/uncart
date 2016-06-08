@@ -20,6 +20,7 @@ static FATFS fs;
 static FIL file;
 
 static void ClearTop(void) {
+    ClearScreen(TOP_SCREEN0, RGB(255, 255, 255));
     ClearScreen(TOP_SCREEN1, RGB(255, 255, 255));
     current_y = 0;
 }
@@ -57,8 +58,8 @@ static int dump_cart_region(u32 start_sector, u32 end_sector, FIL* output_file, 
             Cart_Dummy();
             Cart_Dummy();
 
-        //If there is less data to read than the current read_size, fix it
-        if (end_sector - current_sector < read_size)
+            // If there is less data to read than the current read_size, fix it
+            if (end_sector - current_sector < read_size)
             {
                 read_size = end_sector - current_sector;
             }
@@ -86,15 +87,18 @@ static int dump_cart_region(u32 start_sector, u32 end_sector, FIL* output_file, 
 }
 
 int main() {
+    // Saves the framebuffer information somewhere safe.
+    DrawInit();
+
     // Arbitrary target buffer
     // aligning to 32 bits in case other parts of the software assume alignment
     const u32 target_buf_size = 16u * 1024u * 1024u; // 16MB
-    u32 * const target = memalign(32, target_buf_size);
+    u32* const target = memalign(4, target_buf_size);
 
-    u32 * const ncchHeaderData = memalign(32, sizeof(NCCH_HEADER));
-    NCCH_HEADER * const ncchHeader = (NCCH_HEADER*)ncchHeaderData;
+    u32* const ncchHeaderData = memalign(4, sizeof(NCCH_HEADER));
+    NCCH_HEADER* const ncchHeader = (NCCH_HEADER*)ncchHeaderData;
 
-    NCSD_HEADER * const ncsdHeader = (NCSD_HEADER*)target;
+    NCSD_HEADER* const ncsdHeader = (NCSD_HEADER*)target;
 
 restart_program:
     // Setup boring stuff - clear the screen, initialize SD output, etc...
@@ -115,8 +119,7 @@ restart_program:
     Debug("Done reading NCCH header.");
 
     // Check that the NCCH header magic is there
-    if (strncmp((const char*)(ncchHeader->magic), "NCCH", 4))
-    {
+    if (strncmp((const char*)(ncchHeader->magic), "NCCH", 4)) {
         Debug("NCCH magic not found in header!!!");
         Debug("Press A to continue anyway.");
         if (!(InputWait() & BUTTON_A))
@@ -147,8 +150,7 @@ restart_program:
     Debug("");
 
     u32 input;
-    do
-    {
+    do {
         Debug("Press A to dump all of ROM, B for only the");
         Debug("trimmed version.");
         input = InputWait();
@@ -158,23 +160,23 @@ restart_program:
 
     const u32 mediaUnit = 0x200 * (1u << ncsdHeader->partition_flags[MEDIA_UNIT_SIZE]); //Correctly set the media unit size
 
-    //Calculate the actual size by counting the adding the size of each partition, plus the initial offset
-    //size is in media units
     u32 cartSize;
     // Maximum number of blocks in a single file
     u32 file_max_blocks;
 
-    if (input & BUTTON_B)
-    {
+    if (input & BUTTON_B) {
+        // Calculate the actual size by counting the adding the size of each
+        // partition, plus the initial offset size is in media units
+
+        // The 3DS carts have up to 8 partitions in their carts
         cartSize = ncsdHeader->offsetsize_table[0].offset;
-        for(int i = 0; i < 8; i++){
+        for(size_t i = 0; i < 8; i++) {
             cartSize += ncsdHeader->offsetsize_table[i].size;
         }
 
         Debug("Cart data size: %llu MB", (u64)cartSize * (u64)mediaUnit / 1024ull / 1024ull);
         // Maximum number of blocks in a single file
-        file_max_blocks = 0xFFFFFFFFu / mediaUnit; // 4GiB - 513
-
+        file_max_blocks = 0xFFFFFFFFu / mediaUnit + mediaUnit; // 4GiB - 512
     }
     else
     {
