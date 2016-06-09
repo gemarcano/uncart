@@ -5,7 +5,6 @@
 #include "gamecart/protocol.h"
 #include "gamecart/command_ctr.h"
 #include "headers.h"
-#include "i2c.h"
 
 #include <string.h>
 #include <stdio.h>
