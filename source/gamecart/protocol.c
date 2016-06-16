@@ -19,10 +19,10 @@
 
 extern u8* bottomScreen;
 
-u32 CartID = -1;
+u32 CartID = 0xFFFFFFFFu;
 u32 CartType = 0;
 
-static int A0_Response = -1;
+static u32 A0_Response = 0xFFFFFFFFu;
 static u32 rand1 = 0;
 static u32 rand2 = 0;
 
@@ -205,7 +205,7 @@ void Cart_Secure_Init(u32 *buf, u32 *out)
     u32 test2 = 0;
     const u32 A3_cmd[4] = { 0xA3000000, 0x00000000, rand1, rand2 };
     CTR_SendCommand(A3_cmd, 4, 1, 0x701002C, &test2);
-    
+
     if(test==CartID && test2==A0_Response)
     {
         const u32 C5_cmd[4] = { 0xC5000000, 0x00000000, rand1, rand2 };
