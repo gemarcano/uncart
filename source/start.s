@@ -99,11 +99,15 @@ _setup_heap:
     ldr r1, =__end__ @ grab the location of the end of the binary
     add r0, r0, r1
     ldr r1, =fake_heap_end @ heap goes from end of program to this variable
-	str r0, [r1]
-	mov pc, lr
+    str r0, [r1]
+    mov pc, lr
 
 _init:
     push {r0-r12, lr}
+
+    mrc p15, 0, r4, c1, c0, 0
+    bic r4, r4, #(1<<0)        @ mpu disable
+    mcr p15, 0, r4, c1, c0, 0
 
     bl _enable_caches
 
