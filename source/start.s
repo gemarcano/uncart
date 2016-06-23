@@ -75,9 +75,10 @@ _enable_caches:
     push {r4-r5, lr}
 
     bl _populate_mpu
-    mov r5, #0
-    mcr p15, 0, r5, c7, c5, 0  @ flush I-cache
-    mcr p15, 0, r5, c7, c6, 0  @ flush D-cache
+
+    @ Make sure to clean and flush/invalidate data, to make sure there does not
+    @ remain any changes that are not in RAM.
+    bl _flush_and_clean_caches
 
     mrc p15, 0, r4, c1, c0, 0
     orr r4, r4, #(1<<12)       @ instruction cache enable
@@ -102,9 +103,27 @@ _setup_heap:
     str r0, [r1]
     mov pc, lr
 
+_flush_and_clean_caches:
+    @ flush instruction cache, it's not flushed by Nintendo's function
+    mov r0, #0
+    mcr p15, 0, r0, c7, c5, 0
+
+    @ Nintendo's function uses r0-r2, r12, all registers that don't need
+    @ to be saved, just be aware that they are changed
+    @ use Nintendo's bx lr to return
+    ldr r0, =0xFFFF0830 @ Nintendo's flush function in unprot. bootrom
+    bx r0
+
 _init:
     push {r0-r12, lr}
 
+    @ Explicitly flush and clean caches, so the stack changes, if written to
+    @ cacheable memory, do make it to memory before disabling the MPU for
+    @ configuration changes.
+    bl _flush_and_clean_caches
+
+    @ Disabling the MPU at this point so that changes to caching policies do not
+    @ yield unexpected behavior.
     mrc p15, 0, r4, c1, c0, 0
     bic r4, r4, #(1<<0)        @ mpu disable
     mcr p15, 0, r4, c1, c0, 0
