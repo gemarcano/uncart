@@ -40,15 +40,17 @@ CFLAGS	+=	$(INCLUDE) -DARM9 -Werror-implicit-function-declaration -Wcast-align \
 			-Wcast-qual -Wdisabled-optimization -Wformat=2 -Winit-self \
 			-Wlogical-op -Wmissing-declarations -Wmissing-include-dirs \
 			-Wredundant-decls -Wshadow -Wsign-conversion -Wstrict-overflow=5 \
-			-Wswitch-default -Wundef -Wno-unused
+			-Wswitch-default -Wundef -Wno-unused \
+			-I$(CTRARM9)/include
 
 CXXFLAGS	:= $(CFLAGS) -fno-rtti -fno-exceptions
 
 ASFLAGS	:=	-g $(ARCH)
-LDFLAGS	=	-nostartfiles -g --specs=../stub.specs $(ARCH) -Wl,-Map,$(TARGET).map
+LDFLAGS	=	-nostartfiles -g --specs=../stub.specs $(ARCH) -Wl,-Map,$(TARGET).map \
+			-L$(CTRARM9)/lib
 OCFLAGS	=	--set-section-flags .bss=alloc,load,contents
 
-LIBS	:=
+LIBS	:= -lctr9
 
 ifeq ($(EXEC_METHOD),BRAHMA)
 	CFLAGS += -DBRAHMA #can't use CPPFLAGS because 3ds_rules doesn't use them

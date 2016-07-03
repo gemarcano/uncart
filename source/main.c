@@ -1,15 +1,16 @@
 #include "draw.h"
 #include "hid.h"
-#include "i2c.h"
-#include "fatfs/ff.h"
-#include "gamecart/protocol.h"
-#include "gamecart/command_ctr.h"
+#include <ctr9/i2c.h>
 #include "headers.h"
 
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <malloc.h> //For memalign
+
+#include <ctr9/io/ctr_cart_interface.h>
+#include <ctr9/ctr_headers.h>
+#include <ctr9/io.h>
 
 extern s32 CartID;
 extern s32 CartID2;
@@ -43,7 +44,7 @@ struct Context {
     u32 media_unit;
 };
 
-static int dump_cart_region(u32 start_sector, u32 end_sector, FIL* output_file, struct Context* ctx) {
+static int dump_cart_region(ctr_cart_interface *cart, u32 start_sector, u32 end_sector, FIL* output_file, struct Context* ctx) {
     u32 read_size = 1u * 1024 * 1024 / ctx->media_unit; // 1MiB default
 
     // Dump remaining data
@@ -54,15 +55,13 @@ static int dump_cart_region(u32 start_sector, u32 end_sector, FIL* output_file, 
 
         u8* read_ptr = ctx->buffer;
         while (read_ptr < ctx->buffer + ctx->buffer_size && current_sector < end_sector) {
-            Cart_Dummy();
-            Cart_Dummy();
 
             // If there is less data to read than the current read_size, fix it
             if (end_sector - current_sector < read_size)
             {
                 read_size = end_sector - current_sector;
             }
-            CTR_CmdReadData(current_sector, ctx->media_unit, read_size, read_ptr);
+            ctr_io_read_sector(cart, read_ptr, read_size * ctx->media_unit, current_sector, read_size);
             read_ptr += ctx->media_unit * read_size;
             current_sector += read_size;
         }
@@ -87,17 +86,17 @@ static int dump_cart_region(u32 start_sector, u32 end_sector, FIL* output_file, 
 
 int main() {
     // Saves the framebuffer information somewhere safe.
+	
+	ctr_sd_interface sd;
+	ctr_fatfs_initialize(NULL, NULL, NULL, &sd);
+
     DrawInit();
+	ctr_cart_interface cart;
 
     // Arbitrary target buffer
     // aligning to 32 bits in case other parts of the software assume alignment
     const u32 target_buf_size = 16u * 1024u * 1024u; // 16MB
     u32* const target = memalign(4, target_buf_size);
-
-    u32* const ncchHeaderData = memalign(4, sizeof(NCCH_HEADER));
-    NCCH_HEADER* const ncchHeader = (NCCH_HEADER*)ncchHeaderData;
-
-    NCSD_HEADER* const ncsdHeader = (NCSD_HEADER*)target;
 
 restart_program:
     // Setup boring stuff - clear the screen, initialize SD output, etc...
@@ -111,32 +110,19 @@ restart_program:
 
     // ROM DUMPING CODE STARTS HERE
 
-    Cart_Init();
-    Debug("Cart id is %08x", Cart_GetID());
-    Debug("Reading NCCH header...");
-    CTR_CmdReadHeader(ncchHeader);
-    Debug("Done reading NCCH header.");
+	ctr_cart_interface_initialize(&cart);
+    Debug("Cart id is %08x", cart.cart_id);
 
     // Check that the NCCH header magic is there
-    if (strncmp((const char*)(ncchHeader->magic), "NCCH", 4)) {
+    if (strncmp((const char*)(cart.ncch_header.magic), "NCCH", 4)) {
         Debug("NCCH magic not found in header!!!");
         Debug("Press A to continue anyway.");
         if (!(InputWait() & BUTTON_A))
             goto restart_prompt;
     }
 
-    u32 sec_keys[4];
-    Cart_Secure_Init(ncchHeaderData, sec_keys);
-
-    // Guess 0x200 first for the media size. this will be set correctly once the cart header is read
-    // Read out the header 0x0000-0x1000
-    Cart_Dummy();
-    Debug("Reading NCSD header...");
-    CTR_CmdReadData(0, 0x200, 0x1000 / 0x200, target);
-    Debug("Done reading NCSD header.");
-
     // Check for NCSD magic
-    if (strncmp((const char*)(ncsdHeader->magic), "NCSD", 4)) {
+    if (strncmp((const char*)(cart.ncsd_header.magic), "NCSD", 4)) {
         Debug("NCSD magic not found in header!!!");
         Debug("Press A to continue anyway.");
         if (!(InputWait() & BUTTON_A))
@@ -157,7 +143,7 @@ restart_program:
     while (!(input & BUTTON_A) && !(input & BUTTON_B));
 
 
-    const u32 mediaUnit = 0x200 * (1u << ncsdHeader->partition_flags[MEDIA_UNIT_SIZE]); //Correctly set the media unit size
+    const u32 mediaUnit = 0x200 * (1u << cart.ncsd_header.partition_flags[MEDIA_UNIT_SIZE]); //Correctly set the media unit size
 
     u32 cartSize;
     // Maximum number of blocks in a single file
@@ -168,9 +154,9 @@ restart_program:
         // partition, plus the initial offset size is in media units
 
         // The 3DS carts have up to 8 partitions in their carts
-        cartSize = ncsdHeader->offsetsize_table[0].offset;
+        cartSize = cart.ncsd_header.partition_offset_length_table[0].media_offset;
         for(size_t i = 0; i < 8; i++) {
-            cartSize += ncsdHeader->offsetsize_table[i].size;
+            cartSize += cart.ncsd_header.partition_offset_length_table[i].media_length;
         }
 
         Debug("Cart data size: %llu MB", (u64)cartSize * (u64)mediaUnit / 1024ull / 1024ull);
@@ -179,7 +165,7 @@ restart_program:
     }
     else
     {
-        cartSize = ncsdHeader->media_size;
+        cartSize = cart.ncsd_header.media_size;
         // Maximum number of blocks in a single file
         file_max_blocks = 0x80000000u / mediaUnit; // 2GiB
     }
@@ -197,14 +183,14 @@ restart_program:
         // Create output file
         char filename_buf[32];
         char extension_digit = cartSize <= file_max_blocks ? 's' : '0' + current_part;
-        snprintf(filename_buf, sizeof(filename_buf), "/%.16s.3d%c", ncchHeader->product_code, extension_digit);
+        snprintf(filename_buf, sizeof(filename_buf), "SD:/%.16s.3d%c", cart.ncch_header.product_code, extension_digit);
         Debug("Writing to file: \"%s\"", filename_buf);
         Debug("Change the SD card now and/or press a key.");
         Debug("(Or SELECT to cancel)");
         if (InputWait() & BUTTON_SELECT)
             break;
 
-        if (f_mount(&fs, "0:", 0) != FR_OK) {
+        if (f_mount(&fs, "SD:", 0) != FR_OK) {
             Debug("Failed to f_mount... Retrying");
             wait_key();
             goto cleanup_none;
@@ -223,17 +209,8 @@ restart_program:
         if (region_end > cartSize)
             region_end = cartSize;
 
-        if (dump_cart_region(region_start, region_end, &file, &context) < 0)
+        if (dump_cart_region(&cart, region_start, region_end, &file, &context) < 0)
             goto cleanup_file;
-
-        if (current_part == 0) {
-            // Write header - TODO: Not sure why this is done at the very end..
-            f_lseek(&file, 0x1000);
-            unsigned int written = 0;
-            // Fill the 0x1200-0x4000 unused area with 0xFF instead of random garbage.
-            memset((u8*)ncchHeaderData + 0x200, 0xFF, 0x3000 - 0x200);
-            f_write(&file, ncchHeader, 0x3000, &written);
-        }
 
         Debug("Done!");
         current_part += 1;
@@ -243,7 +220,7 @@ cleanup_file:
         f_sync(&file);
         f_close(&file);
 cleanup_mount:
-        f_mount(NULL, "0:", 0);
+        f_mount(NULL, "SD:", 0);
 cleanup_none:
         ;
     }
@@ -253,7 +230,6 @@ restart_prompt:
     if (!(InputWait() & BUTTON_B))
         goto restart_program;
 
-    free(ncchHeaderData);
     free(target);
 
     Reboot();
